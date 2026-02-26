@@ -1,5 +1,5 @@
 module github.com/relychan/gocompress
 
-go 1.24
+go 1.26
 
-require github.com/klauspost/compress v1.18.2
+require github.com/klauspost/compress v1.18.4

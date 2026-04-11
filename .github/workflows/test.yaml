@@ -3,6 +3,9 @@ name: Unit tests
 on:
   push:
 
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: Lint and test

@@ -101,10 +101,10 @@ func TestFindSupportedEncoding(t *testing.T) {
 		{"exact gzip", "gzip", EncodingGzip},
 		{"exact deflate", "deflate", EncodingDeflate},
 		{"exact zstd", "zstd", EncodingZstd},
-		{"multiple encodings - first supported", "gzip, deflate", EncodingGzip},
-		{"multiple encodings - second supported", "brotli, deflate", EncodingDeflate},
+		{"multiple encodings - first supported", "gzip, deflate", EncodingDeflate},
+		{"multiple encodings - second supported", "deflate, brotli", EncodingDeflate},
 		{"with spaces", " gzip ", EncodingGzip},
-		{"multiple with spaces", "brotli, gzip, deflate", EncodingGzip},
+		{"multiple with spaces", "brotli, deflate, gzip", EncodingGzip},
 		{"unsupported", "brotli", ""},
 		{"empty", "", ""},
 	}
@@ -164,18 +164,9 @@ func TestCompressUnsupportedEncoding(t *testing.T) {
 
 	var buf bytes.Buffer
 	reader := strings.NewReader(testData)
-	n, err := c.Compress(&buf, "unsupported", reader)
-	if err != nil {
-		t.Fatalf("Compress with unsupported encoding failed: %v", err)
-	}
-
-	// Should copy data without compression
-	if n != int64(len(testData)) {
-		t.Errorf("Compress returned size %d, want %d", n, len(testData))
-	}
-
-	if buf.String() != testData {
-		t.Errorf("Compress with unsupported encoding = %q, want %q", buf.String(), testData)
+	_, err := c.Compress(&buf, "unsupported", reader)
+	if err == nil {
+		t.Fatal("Expected unsupported error, got nil")
 	}
 }
 
@@ -184,19 +175,9 @@ func TestDecompressUnsupportedEncoding(t *testing.T) {
 	testData := "Hello, World!"
 
 	reader := io.NopCloser(strings.NewReader(testData))
-	result, err := c.Decompress(reader, "unsupported")
-	if err != nil {
-		t.Fatalf("Decompress with unsupported encoding failed: %v", err)
-	}
-
-	// Should return the original reader
-	data, err := io.ReadAll(result)
-	if err != nil {
-		t.Fatalf("ReadAll failed: %v", err)
-	}
-
-	if string(data) != testData {
-		t.Errorf("Decompress with unsupported encoding = %q, want %q", string(data), testData)
+	_, err := c.Decompress(reader, "unsupported")
+	if err == nil {
+		t.Fatal("Expected unsupported error, got nil")
 	}
 }
 

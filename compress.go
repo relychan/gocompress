@@ -85,10 +85,19 @@ func (c Compressors) FindSupportedEncoding(encoding string) CompressionFormat {
 	return ""
 }
 
-// Compress writes compressed data.
+// Compress and writes compressed data by a raw content encoding value.
 func (c Compressors) Compress(w io.Writer, encoding string, data io.Reader) (int64, error) {
 	format := c.FindSupportedEncoding(encoding)
 
+	return c.CompressFormat(w, format, data)
+}
+
+// CompressFormat and writes compressed data by a compression format enum.
+func (c Compressors) CompressFormat(
+	w io.Writer,
+	format CompressionFormat,
+	data io.Reader,
+) (int64, error) {
 	if format != "" {
 		compressor, ok := c.compressors[format]
 		if ok {
@@ -99,10 +108,18 @@ func (c Compressors) Compress(w io.Writer, encoding string, data io.Reader) (int
 	return io.Copy(w, data)
 }
 
-// Decompress reads and decompresses the reader with equivalent the content encoding.
+// Decompress reads and decompresses the reader with an equivalent content encoding.
 func (c Compressors) Decompress(reader io.ReadCloser, encoding string) (io.ReadCloser, error) {
 	format := c.FindSupportedEncoding(encoding)
 
+	return c.DecompressFormat(reader, format)
+}
+
+// DecompressFormat reads and decompresses the reader with a compression format.
+func (c Compressors) DecompressFormat(
+	reader io.ReadCloser,
+	format CompressionFormat,
+) (io.ReadCloser, error) {
 	if format != "" {
 		compressor, ok := c.compressors[format]
 		if ok {

@@ -28,6 +28,13 @@ const (
 // GzipCompressor implements the compression handler for gzip encoding.
 type GzipCompressor struct{}
 
+var _ Compressor = (*GzipCompressor)(nil)
+
+// NewWriter will create a new compression encoder.
+func (gc GzipCompressor) NewWriter(w io.Writer) (io.WriteCloser, error) {
+	return gzip.NewWriter(w), nil
+}
+
 // Compress the reader content with gzip encoding.
 func (gc GzipCompressor) Compress(w io.Writer, src io.Reader) (int64, error) {
 	zw := gzip.NewWriter(w)

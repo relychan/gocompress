@@ -16,10 +16,7 @@
 package gocompress
 
 import (
-	"bytes"
-	"fmt"
 	"io"
-	"slices"
 	"strings"
 )
 
@@ -28,6 +25,7 @@ var DefaultCompressor = NewCompressors() //nolint:gochecknoglobals
 
 // Compressor abstracts the interface for a compression handler.
 type Compressor interface {
+	NewWriter(w io.Writer) (io.WriteCloser, error)
 	Compress(w io.Writer, src io.Reader) (int64, error)
 	Decompress(reader io.ReadCloser) (io.ReadCloser, error)
 }
@@ -56,138 +54,10 @@ func NewCompressors() *Compressors {
 	}
 }
 
-// AcceptEncoding returns the Accept-Encoding header with supported compression encodings.
-func (c Compressors) AcceptEncoding() string {
-	return c.acceptEncoding
-}
-
-// IsEncodingSupported checks if the input encoding is supported.
-func (c Compressors) IsEncodingSupported(encoding string) bool {
-	results, _ := c.ParseSupportedEncoding(encoding)
-
-	return len(results) > 0
-}
-
-// ParseSupportedEncoding returns the supported encodings from the input string.
-// The priority order is determined by quality value, or the left-to-right order for the same weight in the header.
-// The server generally selects the first encoding listed that it also supports.
-// Return the first error if there is any.
-func (c Compressors) ParseSupportedEncoding( //nolint:cyclop,funlen
-	encoding string,
-) ([]CompressionFormat, error) {
-	encoding = strings.TrimSpace(encoding)
-	if encoding == "" {
-		return nil, nil
-	}
-
-	encoding = strings.ToLower(encoding)
-	if encoding == EncodingIdentity {
-		return nil, nil
-	}
-
-	if encoding == EncodingWildcard {
-		return []CompressionFormat{
-			EncodingDeflate,
-			EncodingGzip,
-			EncodingZstd,
-		}, nil
-	}
-
-	compressionFormat := CompressionFormat(encoding)
-
-	_, ok := c.compressors[compressionFormat]
-	if ok {
-		return []CompressionFormat{compressionFormat}, nil
-	}
-
-	var err error
-
-	parts := strings.Split(encoding, ",")
-	encodings := make([]CompressionEncoding, 0, len(parts))
-
-	for i, part := range parts {
-		if part == "" {
-			continue
-		}
-
-		part = strings.TrimSpace(part)
-		if part == "" || part == EncodingIdentity || part == EncodingWildcard {
-			continue
-		}
-
-		partFormat := CompressionFormat(part)
-
-		_, ok := c.compressors[partFormat]
-		if ok {
-			encodings = append(encodings, CompressionEncoding{
-				Format:       partFormat,
-				QualityValue: 1,
-				Index:        int32(i),
-			})
-
-			continue
-		}
-
-		rawParams := strings.Split(part, ";")
-
-		enc := strings.TrimSpace(rawParams[0])
-		if enc == "" || enc == EncodingIdentity || enc == EncodingWildcard {
-			continue
-		}
-
-		partFormat = CompressionFormat(enc)
-
-		_, ok = c.compressors[partFormat]
-		if !ok {
-			if err == nil {
-				err = fmt.Errorf("%w: %s", ErrUnsupportedCompressionFormat, enc)
-			}
-
-			continue
-		}
-
-		quantity, qErr := parseQualityParam(rawParams[1:])
-		if qErr != nil && err == nil {
-			// Relax the parse error and make the priority lowest.
-			err = fmt.Errorf(
-				"failed to parse quantity value of compression format %s: %w",
-				enc,
-				err,
-			)
-		}
-
-		encodings = append(encodings, CompressionEncoding{
-			Format:       partFormat,
-			QualityValue: quantity,
-			Index:        int32(i),
-		})
-	}
-
-	slices.SortFunc(encodings, func(a, b CompressionEncoding) int {
-		if a.QualityValue == b.QualityValue {
-			return int(a.Index - b.Index)
-		}
-
-		if a.QualityValue < b.QualityValue {
-			return 1
-		}
-
-		return -1
-	})
-
-	results := make([]CompressionFormat, len(encodings))
-
-	for i, enc := range encodings {
-		results[i] = enc.Format
-	}
-
-	return results, err
-}
-
 // Compress and writes compressed data by a raw content encoding value.
 // When multiple encodings are used, the client must encode the data in the order listed in the header.
 // For example, Content-Encoding: deflate, gzip means the data was first deflated, then gzipped.
-func (c Compressors) Compress(w io.Writer, encoding string, data io.Reader) (int64, error) {
+func (c Compressors) Compress(w io.Writer, data io.Reader, encoding string) (int64, error) {
 	formats, err := c.ParseSupportedEncoding(encoding)
 	if err != nil {
 		return 0, err
@@ -206,35 +76,17 @@ func (c Compressors) CompressFormat(
 		return io.Copy(w, data)
 	}
 
-	for i := range len(formats) - 1 {
-		format := formats[i]
-		if format == "" {
-			continue
-		}
-
-		compressor, ok := c.compressors[format]
+	// Compress and write the stream directly.
+	if len(formats) == 1 {
+		compressor, ok := c.compressors[formats[0]]
 		if !ok {
-			continue
+			return io.Copy(w, data)
 		}
 
-		buf := new(bytes.Buffer)
-
-		_, err := compressor.Compress(buf, data)
-		if err != nil {
-			return 0, err
-		}
-
-		data = buf
+		return compressor.Compress(w, data)
 	}
 
-	lastFormat := formats[len(formats)-1]
-
-	compressor, ok := c.compressors[lastFormat]
-	if !ok {
-		return io.Copy(w, data)
-	}
-
-	return compressor.Compress(w, data)
+	return c.compressMultipleFormats(w, data, formats)
 }
 
 // Decompress reads and decompresses the reader with an equivalent content encoding.
@@ -247,16 +99,7 @@ func (c Compressors) Decompress(reader io.ReadCloser, encoding string) (io.ReadC
 		return nil, err
 	}
 
-	result := reader
-
-	for i := len(formats) - 1; i >= 0; i-- {
-		result, err = c.DecompressFormat(reader, formats[i])
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return result, nil
+	return c.DecompressFormat(reader, formats...)
 }
 
 // DecompressFormat reads and decompresses the reader with a compression format.
@@ -281,13 +124,81 @@ func (c Compressors) DecompressFormat(
 			continue
 		}
 
-		result, err = compressor.Decompress(reader)
+		result, err = compressor.Decompress(result)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	return result, nil
+}
+
+func (c Compressors) compressMultipleFormats( //nolint:funlen
+	w io.Writer,
+	data io.Reader,
+	formats []CompressionFormat,
+) (int64, error) {
+	pr, pw := io.Pipe()
+
+	var writer io.Writer = pw
+
+	closers := make([]io.Closer, 0, len(formats))
+
+	closeFunc := func() {
+		for i := len(closers) - 1; i >= 0; i-- {
+			_ = closers[i].Close()
+		}
+	}
+
+	for i := range len(formats) - 1 {
+		format := formats[i]
+		if format == "" {
+			continue
+		}
+
+		compressor, ok := c.compressors[format]
+		if !ok {
+			continue
+		}
+
+		cw, err := compressor.NewWriter(writer)
+		if err != nil {
+			closeFunc()
+
+			return 0, err
+		}
+
+		closers = append(closers, cw)
+		writer = cw
+	}
+
+	if len(closers) == 0 {
+		_ = pr.Close()
+		_ = pw.Close()
+
+		return io.Copy(w, data)
+	}
+
+	go func() {
+		_, err := io.Copy(writer, data)
+		if err != nil {
+			closeFunc()
+
+			_ = pw.CloseWithError(err)
+
+			return
+		}
+
+		closeFunc()
+
+		_ = pw.Close()
+	}()
+
+	written, err := io.Copy(w, pr)
+
+	_ = pr.Close()
+
+	return written, err
 }
 
 type readCloserWrapper struct {

@@ -29,6 +29,13 @@ const (
 // ZstdCompressor implements the compression handler for zstandard encoding.
 type ZstdCompressor struct{}
 
+var _ Compressor = (*ZstdCompressor)(nil)
+
+// NewWriter will create a new compression encoder.
+func (zc ZstdCompressor) NewWriter(w io.Writer) (io.WriteCloser, error) {
+	return zstd.NewWriter(w)
+}
+
 // Compress the reader content with zstd encoding.
 func (zc ZstdCompressor) Compress(w io.Writer, src io.Reader) (int64, error) {
 	zw, err := zstd.NewWriter(w)

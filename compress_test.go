@@ -140,7 +140,7 @@ func TestCompressDecompress(t *testing.T) {
 			// Compress
 			var compressed bytes.Buffer
 			reader := strings.NewReader(testData)
-			n, err := c.Compress(&compressed, encoding, reader)
+			n, err := c.Compress(&compressed, reader, encoding)
 			if err != nil {
 				t.Fatalf("Compress failed: %v", err)
 			}
@@ -174,7 +174,7 @@ func TestCompressUnsupportedEncoding(t *testing.T) {
 
 	var buf bytes.Buffer
 	reader := strings.NewReader(testData)
-	_, err := c.Compress(&buf, "unsupported", reader)
+	_, err := c.Compress(&buf, reader, "unsupported")
 	if err == nil {
 		t.Fatal("Expected unsupported error, got nil")
 	}
@@ -199,7 +199,7 @@ func TestCompressEmptyData(t *testing.T) {
 		t.Run(encoding, func(t *testing.T) {
 			var compressed bytes.Buffer
 			reader := strings.NewReader("")
-			n, err := c.Compress(&compressed, encoding, reader)
+			n, err := c.Compress(&compressed, reader, encoding)
 			if err != nil {
 				t.Fatalf("Compress empty data failed: %v", err)
 			}
@@ -238,7 +238,7 @@ func TestCompressLargeData(t *testing.T) {
 		t.Run(encoding, func(t *testing.T) {
 			var compressed bytes.Buffer
 			reader := strings.NewReader(testData)
-			n, err := c.Compress(&compressed, encoding, reader)
+			n, err := c.Compress(&compressed, reader, encoding)
 			if err != nil {
 				t.Fatalf("Compress large data failed: %v", err)
 			}
@@ -280,7 +280,7 @@ func TestDefaultCompressor(t *testing.T) {
 	testData := "Test with default compressor"
 	var compressed bytes.Buffer
 	reader := strings.NewReader(testData)
-	_, err := DefaultCompressor.Compress(&compressed, "gzip", reader)
+	_, err := DefaultCompressor.Compress(&compressed, reader, "gzip")
 	if err != nil {
 		t.Fatalf("DefaultCompressor.Compress failed: %v", err)
 	}

@@ -16,6 +16,8 @@
 package gocompress
 
 import (
+	"bytes"
+	"fmt"
 	"io"
 	"strings"
 )
@@ -76,14 +78,10 @@ func (c Compressors) CompressFormat(
 		return io.Copy(w, data)
 	}
 
-	// Compress and write the stream directly.
-	if len(formats) == 1 {
-		compressor, ok := c.compressors[formats[0]]
-		if !ok {
-			return io.Copy(w, data)
-		}
-
-		return compressor.Compress(w, data)
+	// Benchmarks prove that the performance of synchronous compression is
+	// better than io.Pipe when compressing 1 or 2 formats.
+	if len(formats) <= 2 { //nolint:mnd
+		return c.compressMultipleFormatsSync(w, data, formats)
 	}
 
 	return c.compressMultipleFormats(w, data, formats)
@@ -121,7 +119,7 @@ func (c Compressors) DecompressFormat(
 
 		compressor, ok := c.compressors[format]
 		if !ok {
-			continue
+			return nil, fmt.Errorf("%w: %s", ErrUnsupportedCompressionFormat, format)
 		}
 
 		result, err = compressor.Decompress(result)
@@ -133,7 +131,7 @@ func (c Compressors) DecompressFormat(
 	return result, nil
 }
 
-func (c Compressors) compressMultipleFormats( //nolint:funlen
+func (c Compressors) compressMultipleFormats(
 	w io.Writer,
 	data io.Reader,
 	formats []CompressionFormat,
@@ -150,15 +148,12 @@ func (c Compressors) compressMultipleFormats( //nolint:funlen
 		}
 	}
 
-	for i := range len(formats) - 1 {
+	for i := len(formats) - 1; i >= 0; i-- {
 		format := formats[i]
-		if format == "" {
-			continue
-		}
 
 		compressor, ok := c.compressors[format]
 		if !ok {
-			continue
+			return 0, fmt.Errorf("%w: %s", ErrUnsupportedCompressionFormat, format)
 		}
 
 		cw, err := compressor.NewWriter(writer)
@@ -181,17 +176,10 @@ func (c Compressors) compressMultipleFormats( //nolint:funlen
 
 	go func() {
 		_, err := io.Copy(writer, data)
-		if err != nil {
-			closeFunc()
-
-			_ = pw.CloseWithError(err)
-
-			return
-		}
 
 		closeFunc()
 
-		_ = pw.Close()
+		_ = pw.CloseWithError(err)
 	}()
 
 	written, err := io.Copy(w, pr)
@@ -199,6 +187,39 @@ func (c Compressors) compressMultipleFormats( //nolint:funlen
 	_ = pr.Close()
 
 	return written, err
+}
+
+func (c Compressors) compressMultipleFormatsSync(
+	w io.Writer,
+	data io.Reader,
+	formats []CompressionFormat,
+) (int64, error) {
+	for i := range len(formats) - 1 {
+		format := formats[i]
+
+		compressor, ok := c.compressors[format]
+		if !ok {
+			return 0, fmt.Errorf("%w: %s", ErrUnsupportedCompressionFormat, format)
+		}
+
+		buf := new(bytes.Buffer)
+
+		_, err := compressor.Compress(buf, data)
+		if err != nil {
+			return 0, err
+		}
+
+		data = buf
+	}
+
+	lastFormat := formats[len(formats)-1]
+
+	compressor, ok := c.compressors[lastFormat]
+	if !ok {
+		return 0, fmt.Errorf("%w: %s", ErrUnsupportedCompressionFormat, lastFormat)
+	}
+
+	return compressor.Compress(w, data)
 }
 
 type readCloserWrapper struct {

@@ -17,6 +17,7 @@ package gocompress
 import (
 	"bytes"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -90,30 +91,39 @@ func TestIsEncodingSupported(t *testing.T) {
 	}
 }
 
-func TestFindSupportedEncoding(t *testing.T) {
+func TestParseSupportedEncoding(t *testing.T) {
 	c := NewCompressors()
 
 	tests := []struct {
 		name     string
 		encoding string
-		want     CompressionFormat
+		want     []CompressionFormat
+		errorMsg string
 	}{
-		{"exact gzip", "gzip", EncodingGzip},
-		{"exact deflate", "deflate", EncodingDeflate},
-		{"exact zstd", "zstd", EncodingZstd},
-		{"multiple encodings - first supported", "gzip, deflate", EncodingDeflate},
-		{"multiple encodings - second supported", "deflate, brotli", EncodingDeflate},
-		{"with spaces", " gzip ", EncodingGzip},
-		{"multiple with spaces", "brotli, deflate, gzip", EncodingGzip},
-		{"unsupported", "brotli", ""},
-		{"empty", "", ""},
+		{"exact gzip", "gzip", []CompressionFormat{EncodingGzip}, ""},
+		{"exact deflate", "deflate", []CompressionFormat{EncodingDeflate}, ""},
+		{"exact zstd", "zstd", []CompressionFormat{EncodingZstd}, ""},
+		{"multiple encodings - first supported", "gzip, deflate", []CompressionFormat{EncodingGzip, EncodingDeflate}, ""},
+		{"multiple encodings - second supported", "deflate, brotli", []CompressionFormat{EncodingDeflate}, ErrUnsupportedCompressionFormat.Error()},
+		{"with spaces", " gzip ", []CompressionFormat{EncodingGzip}, ""},
+		{"multiple with spaces", "brotli, deflate, gzip", []CompressionFormat{EncodingDeflate, EncodingGzip}, ErrUnsupportedCompressionFormat.Error()},
+		{"unsupported", "brotli", nil, ErrUnsupportedCompressionFormat.Error()},
+		{"empty", "", nil, ""},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := c.FindSupportedEncoding(tt.encoding)
-			if got != tt.want {
-				t.Errorf("FindSupportedEncoding(%q) = %q, want %q", tt.encoding, got, tt.want)
+			got, err := c.ParseSupportedEncoding(tt.encoding)
+			if tt.errorMsg != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.errorMsg) {
+					t.Errorf("FindSupportedEncoding(%q): Expected error, got: %s", tt.encoding, err)
+				}
+			} else if err != nil {
+				t.Errorf("FindSupportedEncoding(%q): Expected nil error, got: %s", tt.encoding, err)
+			}
+
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("FindSupportedEncoding(%q) = %v, want %v", tt.encoding, got, tt.want)
 			}
 		})
 	}

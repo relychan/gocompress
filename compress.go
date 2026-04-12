@@ -63,20 +63,15 @@ func (c Compressors) AcceptEncoding() string {
 
 // IsEncodingSupported checks if the input encoding is supported.
 func (c Compressors) IsEncodingSupported(encoding string) bool {
-	return c.FindSupportedEncoding(encoding) != ""
-}
-
-// FindSupportedEncoding returns the supported encoding from the input string.
-func (c Compressors) FindSupportedEncoding(encoding string) CompressionFormat {
 	results, _ := c.ParseSupportedEncoding(encoding)
-	if len(results) == 0 {
-		return ""
-	}
 
-	return results[len(results)-1]
+	return len(results) > 0
 }
 
 // ParseSupportedEncoding returns the supported encodings from the input string.
+// The priority order is determined by quality value, or the left-to-right order for the same weight in the header.
+// The server generally selects the first encoding listed that it also supports.
+// Return the first error if there is any.
 func (c Compressors) ParseSupportedEncoding( //nolint:cyclop,funlen
 	encoding string,
 ) ([]CompressionFormat, error) {
@@ -97,6 +92,7 @@ func (c Compressors) ParseSupportedEncoding( //nolint:cyclop,funlen
 			EncodingZstd,
 		}, nil
 	}
+
 	compressionFormat := CompressionFormat(encoding)
 
 	_, ok := c.compressors[compressionFormat]
@@ -109,7 +105,7 @@ func (c Compressors) ParseSupportedEncoding( //nolint:cyclop,funlen
 	parts := strings.Split(encoding, ",")
 	encodings := make([]CompressionEncoding, 0, len(parts))
 
-	for _, part := range parts {
+	for i, part := range parts {
 		if part == "" {
 			continue
 		}
@@ -126,6 +122,7 @@ func (c Compressors) ParseSupportedEncoding( //nolint:cyclop,funlen
 			encodings = append(encodings, CompressionEncoding{
 				Format:       partFormat,
 				QualityValue: 1,
+				Index:        int32(i),
 			})
 
 			continue
@@ -162,19 +159,20 @@ func (c Compressors) ParseSupportedEncoding( //nolint:cyclop,funlen
 		encodings = append(encodings, CompressionEncoding{
 			Format:       partFormat,
 			QualityValue: quantity,
+			Index:        int32(i),
 		})
 	}
 
 	slices.SortFunc(encodings, func(a, b CompressionEncoding) int {
 		if a.QualityValue == b.QualityValue {
-			return 0
+			return int(a.Index - b.Index)
 		}
 
 		if a.QualityValue < b.QualityValue {
-			return -1
+			return 1
 		}
 
-		return 1
+		return -1
 	})
 
 	results := make([]CompressionFormat, len(encodings))

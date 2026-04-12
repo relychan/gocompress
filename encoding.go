@@ -38,10 +38,11 @@ var ErrUnsupportedCompressionFormat = errors.New("unsupported compression format
 // CompressionEncoding represents the parsed compression encoding from string.
 type CompressionEncoding struct {
 	Format       CompressionFormat
-	QualityValue float64
+	QualityValue float32
+	Index        int32
 }
 
-func parseQualityParam(params []string) (float64, error) {
+func parseQualityParam(params []string) (float32, error) {
 	var (
 		quantity float64 = 1
 		err      error
@@ -49,7 +50,12 @@ func parseQualityParam(params []string) (float64, error) {
 
 	for _, param := range params {
 		key, value, present := strings.Cut(param, "=")
+		if !present {
+			continue
+		}
+
 		key = strings.TrimSpace(key)
+
 		value = strings.TrimSpace(value)
 		if !present || key != "q" || value == "" {
 			continue
@@ -61,5 +67,5 @@ func parseQualityParam(params []string) (float64, error) {
 		}
 	}
 
-	return quantity, nil
+	return float32(quantity), nil
 }

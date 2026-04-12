@@ -28,9 +28,16 @@ const (
 // DeflateCompressor implements the compression handler for deflate encoding.
 type DeflateCompressor struct{}
 
+var _ Compressor = (*DeflateCompressor)(nil)
+
+// NewWriter will create a new compression encoder.
+func (dc DeflateCompressor) NewWriter(w io.Writer) (io.WriteCloser, error) {
+	return flate.NewWriter(w, flate.DefaultCompression)
+}
+
 // Compress the reader content with deflate encoding.
 func (dc DeflateCompressor) Compress(w io.Writer, src io.Reader) (int64, error) {
-	fw, err := flate.NewWriter(w, flate.DefaultCompression)
+	fw, err := dc.NewWriter(w)
 	if err != nil {
 		return 0, err
 	}

@@ -86,10 +86,17 @@ func (c Compressors) ParseSupportedEncoding( //nolint:cyclop,funlen
 	}
 
 	encoding = strings.ToLower(encoding)
-	if encoding == EncodingWildcard || encoding == EncodingIdentity {
+	if encoding == EncodingIdentity {
 		return nil, nil
 	}
 
+	if encoding == EncodingWildcard {
+		return []CompressionFormat{
+			EncodingDeflate,
+			EncodingGzip,
+			EncodingZstd,
+		}, nil
+	}
 	compressionFormat := CompressionFormat(encoding)
 
 	_, ok := c.compressors[compressionFormat]
@@ -180,7 +187,7 @@ func (c Compressors) ParseSupportedEncoding( //nolint:cyclop,funlen
 }
 
 // Compress and writes compressed data by a raw content encoding value.
-// When multiple encodings are used, the client must end the data in the order to that listed in the header.
+// When multiple encodings are used, the client must encode the data in the order listed in the header.
 // For example, Content-Encoding: deflate, gzip means the data was first deflated, then gzipped.
 func (c Compressors) Compress(w io.Writer, encoding string, data io.Reader) (int64, error) {
 	formats, err := c.ParseSupportedEncoding(encoding)

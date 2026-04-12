@@ -48,13 +48,10 @@ func parseQualityParam(params []string) (float64, error) {
 	)
 
 	for _, param := range params {
-		key, value, present := strings.Cut(param, ";")
-		if !present || strings.TrimSpace(key) != "q" || value == "" {
-			continue
-		}
-
+		key, value, present := strings.Cut(param, "=")
+		key = strings.TrimSpace(key)
 		value = strings.TrimSpace(value)
-		if value == "" {
+		if !present || key != "q" || value == "" {
 			continue
 		}
 

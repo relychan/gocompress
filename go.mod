@@ -2,4 +2,4 @@ module github.com/relychan/gocompress
 
 go 1.26
 
-require github.com/klauspost/compress v1.18.5
+require github.com/klauspost/compress v1.18.6

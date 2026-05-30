@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 )
 
@@ -111,8 +112,8 @@ func (c Compressors) DecompressFormat(
 		err    error
 	)
 
-	for i := len(formats) - 1; i >= 0; i-- {
-		format := formats[i]
+	for _, v := range slices.Backward(formats) {
+		format := v
 		if format == "" {
 			continue
 		}
@@ -143,13 +144,13 @@ func (c Compressors) compressMultipleFormats(
 	closers := make([]io.Closer, 0, len(formats))
 
 	closeFunc := func() {
-		for i := len(closers) - 1; i >= 0; i-- {
-			_ = closers[i].Close()
+		for _, v := range slices.Backward(closers) {
+			_ = v.Close()
 		}
 	}
 
-	for i := len(formats) - 1; i >= 0; i-- {
-		format := formats[i]
+	for _, v := range slices.Backward(formats) {
+		format := v
 
 		compressor, ok := c.compressors[format]
 		if !ok {
